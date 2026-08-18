@@ -1,0 +1,207 @@
+---
+title: "Discrete stable distributions"
+author: "Will Townes"
+date: "`r Sys.Date()`"
+output: html_document
+editor: source
+---
+
+```{r}
+library(tidyverse)
+theme_set(theme_bw())
+```
+
+## Case of $\alpha>2$
+
+It's unclear whether discrete stable exists for $\alpha>2$. Let's try it out
+and see if we end up with negative probabilities. The candidate PGF is
+$$G(z)=\exp\left\{\delta(z-1)-\gamma(1-z)^\alpha\right\}$$
+with the constraint that $\gamma>0$ if $\lceil\alpha\rceil$ is odd and $\gamma<0$ otherwise. The recursive formula for the PMF is
+$$p_n = \frac{1}{n}\left[(\delta+\alpha\gamma)p_{n-1}+\gamma\sum_{j=2}^n j(-1)^{j-1}\binom{\alpha}{j}p_{n-j}\right]$$
+Note that some terms may have negative signs, depending on the parity of
+$\lceil\alpha\rceil$ and $n$. This means we can't just apply the usual 
+log-sum-exp trick. We may assume $\delta+\alpha\gamma\geq 0$ since it is necessary for $p_1\geq 0$. 
+
+Let $\alpha^\star=\lceil\alpha\rceil$. Regardless of its parity,
+$\binom{\alpha}{j}>0$ for all $j\leq\alpha^\star$.
+
+Case I: $\alpha^\star$ is odd. Then $\gamma>0$. If $j>\alpha^\star$,
+then $\binom{\alpha}{j}<0$ for $j$ even and $\binom{\alpha}{j}>0$ for $j$ odd.
+Since this alternating sign is canceled by the $(-1)^{j-1}$ term, all terms for 
+$j>\alpha^\star$ are positive. Therefore, the negative terms are 
+$j=2,4,\ldots,\lfloor\alpha\rfloor$. Note that if $\alpha\leq 2$ this means all terms are positive.
+
+Case II: $\alpha^\star$ is even. Then $\gamma<0$. If $j>\alpha^\star$,
+then $\binom{\alpha}{j}<0$ for $j$ odd and $\binom{\alpha}{j}>0$ for $j$ even.
+Since this alternating sign is the opposite of the $(-1)^{j-1}$ term, all terms for 
+$j>\alpha^\star$ are negative. But multiplying by the negative $\gamma$ makes 
+them all positive. Therefore, the negative terms are 
+$j=3,5,\ldots,\lfloor\alpha\rfloor$. Again, for $\alpha\leq 2$ all terms are positive.
+
+```{r}
+# alpha<-2.5
+# gamma<-0.9
+# delta<-5
+
+validgamma<-function(gamma,alpha){
+  if(alpha<=0){ #alpha must be positive
+    return(FALSE)
+  }
+  if(gamma==0){ #if gamma=0, this is ordinary Poisson, so alpha=1 by convention
+    return(alpha==1)
+  }
+  #hereafter assume gamma!=0
+  gpos<- gamma>0
+  if(alpha<1){
+    return(gpos) #gamma should be positive
+  } else if(alpha<=2){
+    return(!gpos) #gamma should be negative
+  } else { #alpha>2
+    alpha_star<-ceiling(alpha)
+    if(alpha==alpha_star){ #integer values of alpha>2 not allowed
+      return(FALSE)
+    } else if(alpha_star%%2==1){
+      return(gpos) #gamma positive when ceil(alpha) is odd
+    } else {
+      return(!gpos)
+    }
+  }
+}
+
+check_delta<-function(delta,gamma,alpha){
+  if(delta< -gamma*alpha){
+    stop("Must have delta>= -gamma*alpha to ensure P(X=1) is nonnegative")
+  } else if(delta< -gamma){
+    stop("Must have delta>= -gamma to ensure P(X=0)<=1")
+  }
+  #if delta>= -alpha*gamma, all probabilities are valid for alpha<=2
+  #if alpha>2, even if both of these conditions are met, it's still possible
+  #to have invalid probabilities. These are caught dynamically by the 
+  #PMF function since there doesn't appear to be a closed from constraint.
+  #increasing delta or making |gamma| closer to zero will always
+  #make the PMF more well behaved.
+}
+
+dstable_pmf_naive<-function(nmax,delta,gamma,alpha){
+  #compute the discrete stable PMF for non-integer alpha
+  #nmax is the largest nonnegative integer at which to evaluate the PMF
+  #will return P(X=n) for n=0,1,...,nmax
+  #delta is location parameter
+  #gamma is scale parameter
+  #alpha is shape (tail) parameter
+  #all parameters can only be scalars
+  #evaluates the PMF using a direct recursion method
+  #may not have great numerical stability
+  stopifnot(validgamma(gamma,alpha))
+  #direct way (numerical underflow likely)
+  #assume alpha is not an integer, for alpha=1,2 handle separately
+  #nmax<-100
+  #nvals<-0:nmax
+  jvals<-2:nmax
+  check_delta(delta,gamma,alpha)
+  dag<-delta+alpha*gamma
+  weights<-c(dag, gamma*jvals*choose(alpha,jvals)*(-1)^(jvals-1))
+  probs<-vector("numeric",length=nmax+1)
+  probs[1]<-exp(-delta-gamma) #P(X=0)
+  if(nmax==0){ #edge case where only want P(X=0)
+    return(probs[1])
+  } 
+  for(n in 1:nmax){
+    probs[n+1]<- mean(probs[n:1]*weights[1:n]) #P(X=n), mean does 1/n part
+    if(probs[n+1]<0){
+      stop("negative probability encountered, increase delta or decrease absolute value of gamma")
+    }
+  }
+  return(probs)
+}
+probs<-dstable_pmf_naive(20,delta=5.0,gamma=.9,alpha=2.5)
+barplot(probs,names.arg=0:(length(probs)-1))
+sum(probs)
+```
+
+We will now implement the PMF on the log scale which should have better numerical stability. Since there are some negative weights (only for $\alpha>2$), we need a more 
+[general version of logSumExp](https://mathstoshare.com/log-sum-exp-trick-with-negative-numbers) that handles the signs. Suppose we want to evaluate
+$$\sum_{i=1}^n a_i - \sum_{j=1}^m b_j$$
+where all the $a_i$ and $b_j$ terms are nonnegative (ie, the $b_j$ part is from the negative terms in the original sum, all put together). We only want to work
+with $\log a_i$ and $\log b_j$ and we want the sum to also be evaluated on the
+log scale. Obviously, the sum of the $a_i$ terms must be larger than the $b_j$
+sum. If that's so, let $A=\log \sum_{i=1}^n \exp (\log a_i)$ (ie, the ordinary)
+logSumExp function applied to the $\log a_i$ vector. Similarly let
+$B=\log \sum_{j=1}^m \exp (\log b_j)$. This is logSumExp applied to the log 
+absolute value of all the negative terms. Then,
+$$\log \left(\sum_{i=1}^n a_i-\sum_{j=1}^m b_j\right) = \log(e^A-e^B) = A + \log\left(1-\exp\big(-(A-B)\big)\right)$$
+The function of $A-B$ on the right side is the `log1mexp` function which
+can be obtained from VGAM, based on a paper by [Maechler](https://cran.r-project.org/web/packages/Rmpfr/vignettes/log1mexp-note.pdf) (2012). Since it is so simple, we just re-implement it here to avoid the package dependency.
+
+```{r}
+log1mexp<-function(x){
+  #slightly modified from original VGAM implementation
+  stopifnot(all(x[!is.na(x)]>0))
+  ifelse(x<=log(2), log(-expm1(-x)), log1p(-exp(-x)))
+}
+
+signed_logSumExp<-function(lx,nn){
+  #lx is log|x| where x could be positive or negative
+  #nn is a logical vector indicating which elements of x are nonnegative
+  #ie, nn<- sign(x)>=0
+  #computes log(sum(x)) with numerical stability
+  #we require that the sum of x be positive otherwise it throws an error
+  #the sum is never directly computed though
+  #lx is allowed to be -Inf (ie, x can have exact zeros)
+  A<-matrixStats::logSumExp(lx,nn)
+  B<-matrixStats::logSumExp(lx,!nn)
+  A+log1mexp(A-B)
+}
+
+dstable_pmf<-function(nmax,delta,gamma,alpha,log=FALSE){
+  #compute the discrete stable PMF for non-integer alpha
+  #nmax is the largest nonnegative integer at which to evaluate the PMF
+  #will return P(X=n) for n=0,1,...,nmax
+  #delta is location parameter
+  #gamma is scale parameter
+  #alpha is shape (tail) parameter
+  #all parameters can only be scalars
+  stopifnot(validgamma(gamma,alpha))
+  #assume alpha is not an integer, for alpha=1,2 handle separately
+  jvals<-2:nmax
+  check_delta(delta,gamma,alpha)
+  dag<-delta+alpha*gamma
+  ldag<-log(dag)
+  #weights<-c(dag, gamma*jvals*choose(alpha,jvals)*(-1)^(jvals-1))
+  lwts<-c(ldag, log(abs(gamma))+log(jvals)+lchoose(alpha,jvals))
+  lp<-vector("numeric",length=nmax+1)
+  lp[1]<- -delta-gamma #logP(X=0)
+  if(nmax==0){ #edge case where only want P(X=0)
+    return(ifelse(log,lp[1],exp(lp[1])))
+  }
+  nn<-rep.int(TRUE,nmax) #1,2,3,...,nmax. Which weights are nonnegative?
+  #negative weights can only occur with alpha>2
+  if(alpha>2){
+    if(gamma>0){ #this implies ceil(alpha) is odd
+      #negative terms are j=2,4,...floor(alpha)
+      negterms<-seq(from=2,to=floor(alpha),by=2)
+    } else { #case where ceil(alpha) is even
+      #negative terms are j=3,5,...,floor(alpha)
+      negterms<-seq(from=3,to=floor(alpha),by=2)
+    }
+    nn[negterms]<-FALSE
+  }
+  for(n in 1:nmax){
+    terms<- lp[n:1] + lwts[1:n]
+    lp[n+1]<- signed_logSumExp(terms,nn[1:n]) - log(n)
+  }
+  if(log){
+    return(lp)
+  } else {
+    return(exp(lp))
+  }
+}
+probs1<-dstable_pmf_naive(20,delta=5.0,gamma=.9,alpha=2.5)
+#barplot(probs1,names.arg=0:(length(probs1)-1))
+probs2<-dstable_pmf(20,delta=5.0,gamma=0.9,alpha=2.5)
+barplot(probs2,names.arg=0:(length(probs2)-1))
+max(abs(probs1-probs2))
+```
+
+
+
