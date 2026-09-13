@@ -210,6 +210,64 @@ max(abs(probs1-probs2))
 sum(probs2)
 ```
 
+```{r}
+find_gamma_limit_gt2<-function(alpha, delta, n=delta*10, tol=1e-3, gamma_start = 1e-3, gamma_max = 1e6){
+  stopifnot(alpha > 2, alpha != round(alpha), delta >= 0, tol > 0)
+  # sign convention from ceiling(alpha) parity
+  gamma_sign <- if (ceiling(alpha) %% 2 == 1) 1 else -1
+  is_valid <- function(g){
+    tryCatch({
+      dstable_pmf(n=n,delta=delta,gamma=g,alpha=alpha)
+      return(TRUE)
+    }, error = function(e) FALSE)
+  }
+  # anchor: |gamma| = 0 treated as valid lower bound
+  lo <- 0
+  hi <- gamma_start
+  # expand hi geometrically until we find an invalid magnitude
+  repeat {
+    if (!is_valid(gamma_sign * hi)) break
+    lo <- hi
+    hi <- hi * 2
+    if (hi > gamma_max) {
+      stop("No invalid gamma found up to gamma_max = ", gamma_max,
+           "; increase gamma_max or check pmf_fun.")
+    }
+  }
+  # bisection: lo is valid, hi is invalid, shrink until width < epsilon
+  while ((hi - lo) > tol) {
+    mid <- (lo + hi) / 2
+    if (is_valid(gamma_sign * mid)) {
+      lo <- mid
+    } else {
+      hi <- mid
+    }
+  }
+  return(gamma_sign*lo)
+}
+
+find_gamma_limit<-function(alpha,delta,...){
+  #for a given value of tail index (alpha) and location (delta), return the gamma value with largest absolute value
+  #such that the parameter combination is still valid but it is not valid for any gamma with larger abs val. 
+  #based on numerical pmf evaluation of P(X=0),P(X=1),...,P(X=n)
+  #... additional args passed to find_gamma_boundary_gt2
+  stopifnot(alpha>0)
+  if(alpha<1){
+    #mean is not finite, gamma>0 is only lower bounded by -delta/alpha in the weird case of delta<0
+    return(Inf)
+  } 
+  stopifnot(delta>=0)
+  if(alpha<=2){ #gamma<=0 for alpha in [1,2]
+    return(-alpha*delta)
+  }
+  find_gamma_limit_gt2(alpha,delta,...)
+}
+
+alpha<-2.9; delta<-10; 
+find_gamma_limit(alpha,delta)
+```
+
+
 ## Visualizing the histograms with different choices of alpha
 
 
@@ -237,6 +295,13 @@ px<-dstable_pmf(max(x),delta=10.0,gamma=2.7,alpha=2.9)#,log=TRUE)
 plot(x,px[-1],type="l",log="xy",lwd=2)
 abline(0.2,-3.9,lty=3,col="red",lwd=2)
 lines(x,dpois(x,10),lty=2,col="blue",lwd=2)
+```
+
+make a pretty ggplot
+
+```{r}
+# scen<-data.frame(n=30,delta=10.0,gamma=c(3.4,2.7))
+# pfunc<-function(
 ```
 
 ### Alpha in (3,4)
@@ -295,49 +360,49 @@ lines(x,dpois(x,10),lty=2,col="blue",lwd=2)
 Make a bunch of histograms
 
 ```{r}
-n<-21
-pd<-data.frame(alpha=rep(c(0.8,1,1.5),2), sigma=2)
-pd$gamma<-sigma2gamma(pd$sigma,pd$alpha)
-#pd$gamma<-round(pd$gamma)
-pd$delta[1:3]<-pd$alpha[1:3]*pd$gamma[1:3]+0.1
-pd$delta[c(4,6)]<-pd$gamma[c(4,6)]*pd$alpha[c(4,6)]^2
-pd$delta[5]<-2*pd$alpha[5]*pd$gamma[5]
-#pd$delta<-ceiling(pd$delta)
-# pd$gamma[1:3]<- (pd$delta[1:3]-0.1)/pd$alpha[1:3] #valid PMF but not self-decomp
-# pd$gamma[c(4,6)]<-(pd$delta[c(4,6)]-0.1)/pd$alpha[c(4,6)]^2 #self-decomp
-# pd$gamma[5]<- (pd$delta[5]-0.1)/(2*pd$alpha[5])
-# pd$sigma<-gamma2sigma(pd$gamma,pd$alpha)
-pd$self_decomp<-rep(c("not discretely self-decomposable","discretely self-decomposable"),each=3)
-pd$alpha_txt<-paste0("alpha=",pd$alpha)
-x<-0:(n-1)
-pd2<- pd %>% group_by(alpha_txt,self_decomp) %>% 
-  reframe(x=x, px=dpoistable(x,alpha,sigma,delta))
+# n<-21
+# pd<-data.frame(alpha=rep(c(0.8,1,1.5),2), sigma=2)
+# pd$gamma<-sigma2gamma(pd$sigma,pd$alpha)
+# #pd$gamma<-round(pd$gamma)
+# pd$delta[1:3]<-pd$alpha[1:3]*pd$gamma[1:3]+0.1
+# pd$delta[c(4,6)]<-pd$gamma[c(4,6)]*pd$alpha[c(4,6)]^2
+# pd$delta[5]<-2*pd$alpha[5]*pd$gamma[5]
+# #pd$delta<-ceiling(pd$delta)
+# # pd$gamma[1:3]<- (pd$delta[1:3]-0.1)/pd$alpha[1:3] #valid PMF but not self-decomp
+# # pd$gamma[c(4,6)]<-(pd$delta[c(4,6)]-0.1)/pd$alpha[c(4,6)]^2 #self-decomp
+# # pd$gamma[5]<- (pd$delta[5]-0.1)/(2*pd$alpha[5])
+# # pd$sigma<-gamma2sigma(pd$gamma,pd$alpha)
+# pd$self_decomp<-rep(c("not discretely self-decomposable","discretely self-decomposable"),each=3)
+# pd$alpha_txt<-paste0("alpha=",pd$alpha)
+# x<-0:(n-1)
+# pd2<- pd %>% group_by(alpha_txt,self_decomp) %>% 
+#   reframe(x=x, px=dpoistable(x,alpha,sigma,delta))
 
-pd$delta_txt<-paste0("delta= ",signif(pd$delta,3))
-pd$gamma_txt<-paste0("gamma= ",signif(pd$gamma,3))
-ggplot(pd2)+geom_col(aes(x=x,y=px))+
-  facet_grid(alpha_txt~self_decomp,scales="free_y")+
-  geom_text(data=pd,aes(x=Inf,y=Inf,label=gamma_txt),hjust=1.05,vjust=1.3)+
-  geom_text(data=pd,aes(x=Inf,y=Inf,label=delta_txt),hjust=1.05,vjust=2.6)+
-  theme(panel.grid.minor = element_blank())+ylab("P(X=x)")
-#+geom_vline(aes(xintercept=delta))
-ggsave("discrete_stable_pmfs.pdf",width=6,height=6)
+# pd$delta_txt<-paste0("delta= ",signif(pd$delta,3))
+# pd$gamma_txt<-paste0("gamma= ",signif(pd$gamma,3))
+# ggplot(pd2)+geom_col(aes(x=x,y=px))+
+#   facet_grid(alpha_txt~self_decomp,scales="free_y")+
+#   geom_text(data=pd,aes(x=Inf,y=Inf,label=gamma_txt),hjust=1.05,vjust=1.3)+
+#   geom_text(data=pd,aes(x=Inf,y=Inf,label=delta_txt),hjust=1.05,vjust=2.6)+
+#   theme(panel.grid.minor = element_blank())+ylab("P(X=x)")
+# #+geom_vline(aes(xintercept=delta))
+# ggsave("discrete_stable_pmfs.pdf",width=6,height=6)
 
-#transposed
-pd3<-pd2 %>% mutate(
-  self_decomp=fct_recode(self_decomp,
-                         "not disc. self-decomp."="not discretely self-decomposable",
-                         "disc. self-decomp."="discretely self-decomposable"))
-pd3$self_decomp<-factor(pd3$self_decomp)
-pd4<-pd %>% mutate(
-  self_decomp=fct_recode(self_decomp,
-                         "not disc. self-decomp."="not discretely self-decomposable",
-                         "disc. self-decomp."="discretely self-decomposable"))
-pd4$self_decomp<-factor(pd4$self_decomp)
-ggplot(pd3)+geom_col(aes(x=x,y=px))+
-  facet_grid(self_decomp~alpha_txt,scales="free_y")+
-  geom_text(data=pd4,aes(x=Inf,y=Inf,label=gamma_txt),hjust=1.05,vjust=1.3)+
-  geom_text(data=pd4,aes(x=Inf,y=Inf,label=delta_txt),hjust=1.05,vjust=2.6)+
-  theme(panel.grid.minor = element_blank())+ylab("P(X=x)")
-ggsave("discrete_stable_pmfs_wide.pdf",width=6,height=4)
+# #transposed
+# pd3<-pd2 %>% mutate(
+#   self_decomp=fct_recode(self_decomp,
+#                          "not disc. self-decomp."="not discretely self-decomposable",
+#                          "disc. self-decomp."="discretely self-decomposable"))
+# pd3$self_decomp<-factor(pd3$self_decomp)
+# pd4<-pd %>% mutate(
+#   self_decomp=fct_recode(self_decomp,
+#                          "not disc. self-decomp."="not discretely self-decomposable",
+#                          "disc. self-decomp."="discretely self-decomposable"))
+# pd4$self_decomp<-factor(pd4$self_decomp)
+# ggplot(pd3)+geom_col(aes(x=x,y=px))+
+#   facet_grid(self_decomp~alpha_txt,scales="free_y")+
+#   geom_text(data=pd4,aes(x=Inf,y=Inf,label=gamma_txt),hjust=1.05,vjust=1.3)+
+#   geom_text(data=pd4,aes(x=Inf,y=Inf,label=delta_txt),hjust=1.05,vjust=2.6)+
+#   theme(panel.grid.minor = element_blank())+ylab("P(X=x)")
+# ggsave("discrete_stable_pmfs_wide.pdf",width=6,height=4)
 ```
