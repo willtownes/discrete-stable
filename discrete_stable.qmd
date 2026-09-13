@@ -212,7 +212,8 @@ sum(probs2)
 
 ```{r}
 find_gamma_limit_gt2<-function(alpha, delta, n=delta*10, tol=1e-3, gamma_start = 1e-3, gamma_max = 1e6){
-  stopifnot(alpha > 2, alpha != round(alpha), delta >= 0, tol > 0)
+  stopifnot(alpha > 2, delta >= 0, tol > 0)
+  if(alpha==round(alpha)){ return(0)}
   # sign convention from ceiling(alpha) parity
   gamma_sign <- if (ceiling(alpha) %% 2 == 1) 1 else -1
   is_valid <- function(g){
@@ -262,11 +263,30 @@ find_gamma_limit<-function(alpha,delta,...){
   }
   find_gamma_limit_gt2(alpha,delta,...)
 }
-
-alpha<-2.9; delta<-10; 
-find_gamma_limit(alpha,delta)
 ```
 
+```{r}
+alpha<-2.9; delta<-10; 
+find_gamma_limit(alpha,delta)
+alpha<-seq(from=2.05,to=19.8,by=.067)
+gamma<-vapply(alpha,find_gamma_limit,1.0,delta=5.0,tol=1e-12)
+sigma<-(gamma*sin(alpha*pi))^(1/alpha) #possible alternate parameterization
+plot(alpha,gamma,type="l")
+plot(alpha,abs(gamma),type="l",log="y")
+plot(alpha,sigma,type="l")
+#plot(alpha,gamma*sin(alpha*pi),type="l")
+```
+
+```{r}
+alpha<-seq(from=2.05,to=7.95,by=0.05)
+gamma<-vapply(alpha,find_gamma_limit,1.0,delta=10.0,tol=1e-12,n=100)
+plot(alpha,abs(gamma),type="l",col="red",lwd=2)
+gamma<-vapply(alpha,find_gamma_limit,1.0,delta=5.0,tol=1e-12,n=100)
+lines(alpha,abs(gamma),col="purple",lwd=2)
+gamma<-vapply(alpha,find_gamma_limit,1.0,delta=2.0,tol=1e-12,n=100)
+lines(alpha,abs(gamma),col="blue",lwd=2)
+legend("topright",paste0("delta=",c(10,5,2)),col=c("red","purple","blue"),lwd=2)
+```
 
 ## Visualizing the histograms with different choices of alpha
 
