@@ -1,5 +1,14 @@
 # functions to compute discrete stable PMFs and other handy convenience functions
 
+sigma2gamma<-function(sigma,alpha){
+  #change from mixed Poisson-Stable(Nolan-1) to simpler scale params
+  ifelse(alpha==1, -sigma*2/pi, sigma^alpha/cos(alpha*pi/2) )
+}
+
+gamma2sigma<-function(gamma,alpha){
+  ifelse(alpha==1, -gamma*pi/2, (cos(alpha*pi/2)*gamma)^(1/alpha) )
+}
+
 validgamma<-function(gamma,alpha){
   if(alpha<=0){ #alpha must be positive
     return(FALSE)
@@ -57,14 +66,26 @@ dstable_pmf_naive<-function(nmax,delta,gamma,alpha){
   jvals<-2:nmax
   check_delta(delta,gamma,alpha)
   dag<-delta+alpha*gamma
-  weights<-c(dag, gamma*jvals*choose(alpha,jvals)*(-1)^(jvals-1))
+  # alpha_non_int<- (alpha != round(alpha))
+  if(alpha==1){
+    weights<-c(dag, -gamma/(jvals-1)) #1/k for k=1...n-1
+  } else if(alpha!=2){
+    weights<-c(dag, gamma*jvals*choose(alpha,jvals)*(-1)^(jvals-1))
+  }
+  #if alpha=2 there are only two weights so compute directly in the loop
   probs<-vector("numeric",length=nmax+1)
-  probs[1]<-exp(-delta-gamma) #P(X=0)
+  probs[1]<-ifelse(alpha==1,exp(-delta),exp(-delta-gamma)) #P(X=0)
   if(nmax==0){ #edge case where only want P(X=0)
     return(probs[1])
   } 
   for(n in 1:nmax){
-    probs[n+1]<- mean(probs[n:1]*weights[1:n]) #P(X=n), mean does 1/n part
+    if(alpha!=2){
+      probs[n+1]<- mean(probs[n:1]*weights[1:n]) #P(X=n), mean does 1/n part
+    } else if(alpha==2){
+      probs[n+1]<-(dag*probs[n]-2*gamma*probs[n-1])/n
+    } else {
+      stop("invalid alpha, must be 1,2, or a positive non-integer value")
+    }
     if(probs[n+1]<0){
       stop("negative probability encountered, increase delta or decrease absolute value of gamma")
     }
@@ -105,10 +126,20 @@ dstable_pmf<-function(nmax,delta,gamma,alpha,log=FALSE){
   check_delta(delta,gamma,alpha)
   dag<-delta+alpha*gamma
   ldag<-log(dag)
-  #weights<-c(dag, gamma*jvals*choose(alpha,jvals)*(-1)^(jvals-1))
-  lwts<-c(ldag, log(abs(gamma))+log(jvals)+lchoose(alpha,jvals))
+  # if(alpha==1){
+  #   weights<-c(dag, -gamma/(jvals-1)) #1/k for k=1...n-1
+  # } else if(alpha!=2){
+  #   weights<-c(dag, gamma*jvals*choose(alpha,jvals)*(-1)^(jvals-1))
+  # }
+  if(alpha==1){
+    lwts<-c(ldag, log(-gamma)-log(jvals-1))
+  } else if(alpha==2){
+    lwts<-c(ldag, log(-2*gamma)) #note this is shorter than the others!
+  } else {
+    lwts<-c(ldag, log(abs(gamma))+log(jvals)+lchoose(alpha,jvals))
+  } 
   lp<-vector("numeric",length=nmax+1)
-  lp[1]<- -delta-gamma #logP(X=0)
+  lp[1]<- ifelse(alpha==1, -delta, -delta-gamma) #logP(X=0)
   if(nmax==0){ #edge case where only want P(X=0)
     return(ifelse(log,lp[1],exp(lp[1])))
   }
@@ -125,8 +156,18 @@ dstable_pmf<-function(nmax,delta,gamma,alpha,log=FALSE){
     nn[negterms]<-FALSE
   }
   for(n in 1:nmax){
-    terms<- lp[n:1] + lwts[1:n]
-    lp[n+1]<- signed_logSumExp(terms,nn[1:n]) - log(n)
+    if(alpha!=2){
+      terms<- lp[n:1] + lwts[1:n]
+    } else if(n==1) { #alpha=2, n=1 has only one weight
+      terms<- lp[1]+ldag
+    } else { #alpha=2, n=2,3,... has two weights
+      terms<- lp[c(n,n-1)] + lwts
+    }
+    if(alpha<=2){ #all terms are nonnegative
+      lp[n+1]<-matrixStats::logSumExp(terms) - log(n)
+    } else { #alpha>2, some terms negative
+      lp[n+1]<- signed_logSumExp(terms,nn[1:n]) - log(n)
+    }
   }
   if(log){
     return(lp)
