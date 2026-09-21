@@ -73,6 +73,19 @@ max(abs(probs1-probs2))
 sum(probs2)
 ```
 
+Check the $\alpha=2$ case is consistent with Hermite reference implementation
+
+```{r}
+alpha<-2; gamma<- -0.7
+delta<-alpha^2*(-gamma)-0.5
+ph0<-hermite::dhermite(0:20,delta+alpha*gamma,-gamma)
+ph1<-dstable_pmf_naive(20,delta,gamma,alpha)
+ph2<-dstable_pmf(20,delta,gamma,alpha)
+max(abs(ph1-ph0)) #verify correctness
+max(abs(ph2-ph1)) #verify consistency
+barplot(ph2)
+```
+
 ## Finding the limit of how big gamma can be
 
 For a given alpha,delta combination, |gamma| must be kept suitably small for the PMF to be valid. Here we check this numerically for alpha>2. 

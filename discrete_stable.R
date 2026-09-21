@@ -81,10 +81,10 @@ dstable_pmf_naive<-function(nmax,delta,gamma,alpha){
   for(n in 1:nmax){
     if(alpha!=2){
       probs[n+1]<- mean(probs[n:1]*weights[1:n]) #P(X=n), mean does 1/n part
-    } else if(alpha==2){
+    } else if(n>1){ #alpha=2, n=2,3,... has two terms in recursion
       probs[n+1]<-(dag*probs[n]-2*gamma*probs[n-1])/n
-    } else {
-      stop("invalid alpha, must be 1,2, or a positive non-integer value")
+    } else { #alpha=2, n=1 has one term in recursion
+      probs[n+1]<-(dag*probs[n])/n
     }
     if(probs[n+1]<0){
       stop("negative probability encountered, increase delta or decrease absolute value of gamma")
@@ -158,10 +158,10 @@ dstable_pmf<-function(nmax,delta,gamma,alpha,log=FALSE){
   for(n in 1:nmax){
     if(alpha!=2){
       terms<- lp[n:1] + lwts[1:n]
-    } else if(n==1) { #alpha=2, n=1 has only one weight
-      terms<- lp[1]+ldag
-    } else { #alpha=2, n=2,3,... has two weights
+    } else if(n>1) { #alpha=2, n=2,3,... has two weights
       terms<- lp[c(n,n-1)] + lwts
+    } else { #alpha=2, n=1 has only one weight
+      terms<- lp[1]+ldag
     }
     if(alpha<=2){ #all terms are nonnegative
       lp[n+1]<-matrixStats::logSumExp(terms) - log(n)
