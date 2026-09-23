@@ -443,13 +443,13 @@ gamma <- 1
 ############################################################
 
 results <- plot_threshold_curve(
-  gamma = -0.05,
+  gamma = 0.05,
   n_alpha = 100,
   N = 300,
   delta_tol = 1e-6,
   pmf_tol = 1e-12,
-  endpoint_offset = 0.01,
-  curve_colour = "grey",
+  endpoint_offset = 0.001,
+  curve_colour = "black",
   curve_width = 3,
   add = TRUE
 )
