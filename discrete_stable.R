@@ -224,7 +224,7 @@ find_gamma_limit<-function(alpha,delta,...){
   } 
   stopifnot(delta>=0)
   if(alpha<=2){ #gamma<=0 for alpha in [1,2]
-    return(-alpha*delta)
+    return(-delta/alpha)
   }
   find_gamma_limit_gt2(alpha,delta,...)
 }
