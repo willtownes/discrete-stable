@@ -132,37 +132,7 @@ ggsave("fig/gamma_limit.pdf",width=6,height=4)
 
 ## Visualizing the histograms with different choices of alpha
 
-```{r}
-df<-data.frame(delta=10, 
-              alpha=c(0.5,0.9,1.0,1.1,1.5,2.0,2.1,2.5,2.9,3.1,3.5,3.9))
-df$gamma<-vapply(df$alpha,find_gamma_limit,1.0,delta=df$delta[1])
-df$gamma[df$alpha<1]<- 1
-df$gamma[df$alpha==1]<- -1
-sel<-df$alpha > 1 & df$alpha<=2
-df$gamma[sel]<- 0.95*df$gamma[sel]
-ann <- df %>% mutate(label=paste0("gamma=='", formatC(gamma, digits=3, format="fg", flag="#"), "'"))
-xmax<-1000
-px<-apply(df,1,function(r){dstable_pmf(xmax,delta=r[1],gamma=r[3],alpha=r[2])})
-rownames(px)<-paste0("x=",0:xmax)
-df$alpha_lab<-paste0("alpha=='", formatC(df$alpha, digits=1, format="f"),"'")
-df<-cbind(df,t(px))
-df<-df %>% pivot_longer(cols=starts_with("x="),names_to="x",names_prefix="x=",values_to="px")
-df$x<-as.integer(df$x)
-
-#histogram up to x=30
-df_ss<-df %>% filter(x<=30)
-ggplot(df_ss) + geom_bar(stat="identity",aes(x=x,y=px))+facet_wrap(~alpha,scales="free_y",ncol=3) + 
-  geom_text(data = ann, aes(x = Inf, y = Inf, label = label),
-  hjust = 1.1, vjust = 1.5, size = 3.5, parse = TRUE) + 
-    ylab("P(X=x)")
-ggsave("fig/discrete_stable_pmfs.pdf",width=6,height=6)
-```
-
-Log-log plots
-
-
-### Alpha in (2,3)
-
+crude plot gives the basic idea
 ```{r}
 n<-30
 probs<-dstable_pmf(n,delta=10.0,gamma=3.4,alpha=2.5)#,log=TRUE)
@@ -176,78 +146,56 @@ lines(x,dpois(x,10),lty=2,col="blue",lwd=2)
 ```
 
 ```{r}
-n<-30
-probs<-dstable_pmf(n,delta=10.0,gamma=2.7,alpha=2.9)#,log=TRUE)
-barplot(probs,names.arg=0:n)
-barplot(probs,names.arg=0:n, ylim=c(0,.001))
-x<-1:1000
-px<-dstable_pmf(max(x),delta=10.0,gamma=2.7,alpha=2.9)#,log=TRUE)
-plot(x,px[-1],type="l",log="xy",lwd=2)
-abline(0.2,-3.9,lty=3,col="red",lwd=2)
-lines(x,dpois(x,10),lty=2,col="blue",lwd=2)
+df<-data.frame(delta=10, 
+              alpha=c(0.5,0.9,1.0,1.1,1.5,2.0,2.1,2.5,2.9,3.1,3.5,3.9))
+df$gamma<-vapply(df$alpha,find_gamma_limit,1.0,delta=df$delta[1])
+df$gamma[df$alpha<1]<- 1
+df$gamma[df$alpha==1]<- -1
+sel<-df$alpha > 1 # & df$alpha<=2
+df$gamma[sel]<- 0.98*df$gamma[sel]
+
+ann <- df %>% mutate(label=paste0("gamma=='", formatC(gamma, digits=3, format="fg", flag="#"), "'"))
+xmax<-500
+lp<-apply(df,1,function(r){dstable_pmf(xmax,delta=r[1],gamma=r[3],alpha=r[2],log=TRUE)})
+rownames(lp)<-paste0("x=",0:xmax)
+#df$alpha_lab<-paste0("alpha=='", formatC(df$alpha, digits=1, format="f"),"'")
+df<-cbind(df,t(lp))
+df<-df %>% pivot_longer(cols=starts_with("x="),names_to="x",names_prefix="x=",values_to="lp")
+df$x<-as.integer(df$x)
+df$px<-exp(df$lp)
+
+#histogram up to x=30
+df_ss<-df %>% filter(x<=30)
+ggplot(df_ss) + geom_bar(stat="identity",aes(x=x,y=px))+facet_wrap(~alpha,scales="free_y",ncol=3,labeller=label_bquote(alpha == .(alpha))) + 
+  geom_text(data = ann, aes(x = Inf, y = Inf, label = label),
+  hjust = 1.1, vjust = 1.5, size = 3, parse = TRUE) + 
+    ylab("P(X=x)") + theme(strip.text = element_text(hjust = 1))
+ggsave("fig/discrete_stable_pmfs.pdf",width=6,height=6)
 ```
 
-make a pretty ggplot
+Log-log plots
 
 ```{r}
-# scen<-data.frame(n=30,delta=10.0,gamma=c(3.4,2.7))
-# pfunc<-function(
+df1<-subset(df,x>0)
+df1$log10px<-df1$lp*log10(exp(1)) #convert to log10 scale
+#find intercept term of log-log tail
+dfit<-subset(df1,x>200)
+plaw_int<-dfit %>% group_by(alpha) %>% summarise(int=mean(log10px-log10(x)*(-(1+alpha))))
+poi_pmf<-df1 %>% group_by(alpha) %>% mutate(log10poi=dpois(x,delta,log=TRUE)*log10(exp(1))) %>% filter(log10poi>=min(log10px))
+
+#poi_pmf<-data.frame(x=1:xmax)
+#poi_pmf$log10px<-dpois(poi_pmf$x,delta,log=TRUE)*log10(exp(1))
+
+ggplot(df1) + geom_line(aes(x=x,y=log10px))+scale_x_log10()+
+facet_wrap(~alpha,scales="free_y",ncol=3,labeller=label_bquote(alpha == .(alpha)))+ylab("log10 P(X=x)")+geom_abline(data=plaw_int,aes(intercept=int,slope=-(1+alpha)),linetype="dotted",color="red")+
+geom_text(data = ann, aes(x = Inf, y = Inf, label = label),
+  hjust = 1.1, vjust = 1.5, size = 3, parse = TRUE) + 
+    xlab("x (log10 scale)") + theme(strip.text = element_text(hjust = 1))+
+    geom_line(data=poi_pmf,aes(x=x,y=log10poi),colour="blue",linetype="dashed")
+ggsave("fig/discrete_stable_loglog.pdf",width=6,height=6)
 ```
 
-### Alpha in (3,4)
-
-```{r}
-n<-35
-probs<-dstable_pmf(n,delta=10.0,gamma=-0.95,alpha=3.1)#,log=TRUE)
-barplot(probs,names.arg=0:n)
-barplot(probs,names.arg=0:n,ylim=c(0,1e-4))
-x<-1:1000
-px<-dstable_pmf(max(x),delta=10.0,gamma=-0.95,alpha=3.1)#,log=TRUE)
-plot(x,px[-1],type="l",log="xy",lwd=2)
-abline(-0.2,-4.1,lty=3,col="red",lwd=2)
-lines(x,dpois(x,10),lty=2,col="blue",lwd=2)
-```
-
-```{r}
-n<-35
-probs<-dstable_pmf(n,delta=10.0,gamma=-1.5,alpha=3.25)#,log=TRUE)
-barplot(probs,names.arg=0:n)
-barplot(probs,names.arg=0:n,ylim=c(0,2e-4))
-x<-1:1000
-px<-dstable_pmf(max(x),delta=10.0,gamma=-1.5,alpha=3.25)#,log=TRUE)
-plot(x,px[-1],type="l",log="xy",lwd=2)
-abline(0.45,-4.25,lty=3,col="red",lwd=2)
-lines(x,dpois(x,10),lty=2,col="blue",lwd=2)
-```
-
-
-```{r}
-n<-50
-probs<-dstable_pmf(n,delta=10.0,gamma=-1.22,alpha=3.5)#,log=TRUE)
-barplot(probs,names.arg=0:n)
-barplot(probs,names.arg=0:n,ylim=c(0,1e-4))
-x<-1:1000
-px<-dstable_pmf(max(x),delta=10.0,gamma=-1.22,alpha=3.5)#,log=TRUE)
-plot(x,px[-1],type="l",log="xy",lwd=2)
-abline(0.7,-4.5,lty=3,col="red",lwd=2)
-lines(x,dpois(x,10),lty=2,col="blue",lwd=2)
-```
-
-```{r}
-n<-50
-probs<-dstable_pmf(n,delta=10.0,gamma=-0.81,alpha=3.9)#,log=TRUE)
-barplot(probs,names.arg=0:n)
-barplot(probs,names.arg=0:n,ylim=c(0,1e-5))
-x<-1:1000
-px<-dstable_pmf(max(x),delta=10.0,gamma=-0.81,alpha=3.9)#,log=TRUE)
-plot(x,px[-1],type="l",log="xy",lwd=2)
-abline(0.2,-4.9,lty=3,col="red",lwd=2)
-lines(x,dpois(x,10),lty=2,col="blue",lwd=2)
-```
-
-### Alpha in (0,2]
-
-Make a bunch of histograms
+### Discrete self-decomposability
 
 ```{r}
 n<-21
