@@ -176,6 +176,54 @@ dstable_pmf<-function(nmax,delta,gamma,alpha,log=FALSE){
   }
 }
 
+find_delta_limit_gt2<-function(alpha, gamma, n=max(delta*10,100), tol=1e-12, delta_start=100, delta_max = 1e12){
+  stopifnot(alpha > 2, tol > 0)
+  stopifnot(validgamma(gamma,alpha))
+  if(alpha==round(alpha)){ return(Inf)}
+  # sign convention from ceiling(alpha) parity
+  is_valid <- function(d){
+    tryCatch({
+      dstable_pmf(n=n,delta=d,gamma=gamma,alpha=alpha)
+      return(TRUE)
+    }, error = function(e) FALSE)
+  }
+  lo <- 0
+  hi <- delta_start
+  # expand hi geometrically until we find a valid value
+  repeat {
+    if (is_valid(hi)) break
+    lo <- hi
+    hi <- hi * 2
+    if (hi > delta_max) {
+      stop("No valid delta found up to delta_max = ", delta_max,
+           "; increase delta_max or check pmf_fun.")
+    }
+  }
+  # bisection: lo is invalid, hi is valid, shrink until width < epsilon
+  while ((hi - lo) > tol) {
+    mid <- (lo + hi) / 2
+    if (is_valid(mid)) {
+      hi <- mid
+    } else {
+      lo <- mid
+    }
+  }
+  return(hi)
+}
+
+find_delta_limit<-function(alpha,gamma,...){
+  #for a given value of tail index (alpha) and scale (gamma), return the delta value with smallest value
+  #such that the parameter combination is still valid but it is not valid for any smaller delta
+  #based on numerical pmf evaluation of P(X=0),P(X=1),...,P(X=n)
+  #... additional args passed to find_delta_limit_gt2
+  stopifnot(alpha>0)
+  if(alpha<=2){
+    stopifnot(validgamma(gamma,alpha))
+    return(-alpha*gamma)
+  }
+  find_delta_limit_gt2(alpha,gamma,...)
+}
+
 find_gamma_limit_gt2<-function(alpha, delta, n=max(delta*10,100), tol=1e-12, gamma_start = 1e-3, gamma_max = 1e6){
   stopifnot(alpha > 2, delta >= 0, tol > 0)
   if(alpha==round(alpha)){ return(0)}

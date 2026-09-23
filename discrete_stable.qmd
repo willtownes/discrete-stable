@@ -86,7 +86,50 @@ max(abs(ph2-ph1)) #verify consistency
 barplot(ph2)
 ```
 
-## Finding the limit of how big gamma can be
+## Finding parameter limits
+
+### Minimum delta
+
+For a given $\alpha,\gamma$ combination, $\delta$ must be sufficiently large for the PMF to be valid.
+
+```{r}
+alpha<-2.9; gamma<-1; 
+find_delta_limit(alpha,delta)
+alpha<-seq(from=2.05,to=9.8,by=.067)
+gamma<- (-1)^(ceiling(alpha)+1)
+delta<-mapply(find_delta_limit,alpha,gamma,MoreArgs=list(n=500))
+plot(alpha,delta,type="l",log="y")
+```
+
+```{r}
+alpha<- seq(from = 1.01, to = 6.01, by = 0.05)
+gsign<- (-1)^(ceiling(alpha)+1)
+gamma_abs<-c(0.1,0.5,1.0)
+
+f<-function(g) {
+  data.frame(
+    alpha = alpha,
+    delta = mapply(find_delta_limit, alpha, g*gsign, MoreArgs=list(n=500)),
+    gamma = g
+  )
+}
+
+df <- do.call(rbind, lapply(gamma_abs, f))
+df$gamma <- factor(df$gamma)#, labels = paste0("gamma=", ))
+
+#linetype = delta,
+ggplot(df, aes(x = alpha, y = delta, colour=gamma)) + 
+  geom_line(linewidth = 1) +
+  theme(
+    legend.position = "inside",
+    legend.position.inside = c(0.02, 0.98),
+    legend.justification = c(1, 1),
+    legend.title = element_blank()
+  )
+#ggsave("fig/delta_limit.pdf",width=6,height=4)
+```
+
+### Maximum absolute value of gamma
 
 For a given alpha,delta combination, |gamma| must be kept suitably small for the PMF to be valid. Here we check this numerically for alpha>2. 
 
@@ -109,7 +152,7 @@ deltas <- c(9, 6, 3)
 f<-function(d) {
   data.frame(
     alpha = alpha,
-    gamma = vapply(alpha, find_gamma_limit, 1.0, delta = d),
+    gamma = vapply(alpha, find_gamma_limit, 1.0, delta = d, n=500),
     delta = d
   )
 }
@@ -117,7 +160,8 @@ f<-function(d) {
 df <- do.call(rbind, lapply(deltas, f))
 df$delta <- factor(df$delta, levels = deltas, labels = paste0("delta=", deltas))
 
-ggplot(df, aes(x = alpha, y = abs(gamma), linetype = delta, colour=delta)) +
+#linetype = delta,
+ggplot(df, aes(x = alpha, y = abs(gamma), colour=delta)) + 
   geom_line(linewidth = 1) +
   theme(
     legend.position = "inside",
@@ -145,14 +189,18 @@ abline(0.6,-3.5,lty=3,col="red",lwd=2)
 lines(x,dpois(x,10),lty=2,col="blue",lwd=2)
 ```
 
+nicer version with ggplot
+
 ```{r}
 df<-data.frame(delta=10, 
               alpha=c(0.5,0.9,1.0,1.1,1.5,2.0,2.1,2.5,2.9,3.1,3.5,3.9))
-df$gamma<-vapply(df$alpha,find_gamma_limit,1.0,delta=df$delta[1])
+df$gamma<-vapply(df$alpha,find_gamma_limit,1.0,delta=df$delta[1],tol=1e-6)
 df$gamma[df$alpha<1]<- 1
 df$gamma[df$alpha==1]<- -1
-sel<-df$alpha > 1 # & df$alpha<=2
+sel<-df$alpha > 1 & df$alpha<=2
 df$gamma[sel]<- 0.98*df$gamma[sel]
+#sel<-df$alpha > 1 & df$alpha<=2
+#df$gamma[df$alpha==2]<-0.95*df$gamma[df$alpha==2]
 
 ann <- df %>% mutate(label=paste0("gamma=='", formatC(gamma, digits=3, format="fg", flag="#"), "'"))
 xmax<-500
