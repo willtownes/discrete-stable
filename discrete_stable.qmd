@@ -102,9 +102,13 @@ plot(alpha,delta,type="l",log="y")
 ```
 
 ```{r}
-alpha<- seq(from = 1.01, to = 6.01, by = 0.05)
+alpha<-expand.grid(c(.0001,seq(from=.05,to=.95,by=.05),.9999), 0:5)
+alpha<-rowSums(alpha)
+alpha<-sort(c(1,2,alpha))
+#alpha<- seq(from = 1.01, to = 6.01, by = 0.05)
 gsign<- (-1)^(ceiling(alpha)+1)
-gamma_abs<-c(0.1,0.5,1.0)
+gsign[alpha==1]<- -1
+gabs<-c(0.1,0.5,1.0)
 
 f<-function(g) {
   data.frame(
@@ -114,19 +118,43 @@ f<-function(g) {
   )
 }
 
-df <- do.call(rbind, lapply(gamma_abs, f))
-df$gamma <- factor(df$gamma)#, labels = paste0("gamma=", ))
+df <- do.call(rbind, lapply(gabs, f)) 
+df$gamma <- factor(df$gamma, levels = rev(gabs))
 
-#linetype = delta,
-ggplot(df, aes(x = alpha, y = delta, colour=gamma)) + 
+# Sign bar: one tile per alpha, with edges at midpoints so the uneven alpha grid is covered
+mid <- (head(alpha, -1) + tail(alpha, -1)) / 2
+sign_df <- data.frame(
+  xmin = c(alpha[1], mid),
+  xmax = c(mid, alpha[length(alpha)]),
+  sign = factor(gsign, levels = c(-1, 1))
+)
+
+# Put the bar just below the lowest curve
+yr <- range(df$delta[is.finite(df$delta)])
+h  <- 0.03 * diff(yr)
+sign_df$ymin <- yr[1] - 1.5 * h
+sign_df$ymax <- yr[1] - 0.5 * h
+
+ggplot(df, aes(x = alpha, y = delta, colour = gamma)) + ylab("delta star") +
+  geom_rect(data = sign_df,
+            aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = sign),
+            inherit.aes = FALSE) +
   geom_line(linewidth = 1) +
+  scale_colour_discrete(
+    labels = parse(text = paste0("group('|', gamma, '|') == ", rev(gabs)))
+  ) +
+  scale_fill_manual(
+    values = c("-1" = "grey75", "1" = "grey35"),
+    labels = c(expression(gamma < 0), expression(gamma > 0))
+  ) +
+  guides(colour = guide_legend(order = 1), fill = guide_legend(order = 2)) +
   theme(
     legend.position = "inside",
     legend.position.inside = c(0.02, 0.98),
-    legend.justification = c(1, 1),
+    legend.justification = c(0, 1),
     legend.title = element_blank()
   )
-#ggsave("fig/delta_limit.pdf",width=6,height=4)
+ggsave("fig/delta_limit.pdf",width=6,height=4)
 ```
 
 ### Maximum absolute value of gamma
