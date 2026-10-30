@@ -256,7 +256,10 @@ df1<-subset(df,x>0)
 df1$log10px<-df1$lp*log10(exp(1)) #convert to log10 scale
 #find intercept term of log-log tail
 dfit<-subset(df1,x>200)
-plaw_int<-dfit %>% group_by(alpha) %>% summarise(int=mean(log10px-log10(x)*(-(1+alpha))))
+plaw_int<-dfit %>% group_by(alpha) %>% summarise(int=mean(log10px-log10(x)*(-(1+alpha))),
+  int_theor=log10(-gamma[1]/gamma(-alpha[1])))
+with(subset(plaw_int,alpha!=2),plot(int,int_theor))
+abline(0,1) #theoretical vs empirical intercept
 poi_pmf<-df1 %>% group_by(alpha) %>% mutate(log10poi=dpois(x,delta,log=TRUE)*log10(exp(1))) %>% filter(log10poi>=min(log10px))
 
 #poi_pmf<-data.frame(x=1:xmax)
